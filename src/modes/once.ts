@@ -24,10 +24,10 @@ export async function runOnce(
   try {
     // Step 1: Setup authentication
     logger.info('Setting up authentication...');
-    await gitManager.setupAuth(auth);
+    await gitManager.setupAuth(auth, config.repo.url);
 
     // Step 2: Clone or fetch repository
-    logger.info('Fetching repository...');
+    logger.info(`Fetching repository: ${config.repo.url}`);
     const repoCacheDir = cacheManager.getRepoCacheDir(config.repo.url);
     await gitManager.cloneOrFetch(config.repo.url, repoCacheDir);
 
@@ -40,15 +40,21 @@ export async function runOnce(
     mkdirSync(workDir, { recursive: true });
 
     const ref = config.repo.version || config.repo.branch;
-    commitHash = await gitManager.checkout(repoCacheDir, ref, workDir);
+    const { commitHash: hash, repoInfo } = await gitManager.checkout(repoCacheDir, ref, workDir);
+    commitHash = hash;
+
+    // Log repository info from git
+    logger.info('Repository info:', repoInfo);
 
     // Determine project directory (support subdirectory)
-    const projectDir = config.repo.subdirectory
-      ? join(workDir, config.repo.subdirectory)
+    // Normalize path separators for cross-platform compatibility
+    const normalizedSubdirectory = config.repo.subdirectory?.replace(/\\/g, '/');
+    const projectDir = normalizedSubdirectory
+      ? join(workDir, normalizedSubdirectory)
       : workDir;
 
-    if (config.repo.subdirectory && !existsSync(projectDir)) {
-      throw new Error(`Subdirectory "${config.repo.subdirectory}" does not exist in repository`);
+    if (normalizedSubdirectory && !existsSync(projectDir)) {
+      throw new Error(`Subdirectory "${normalizedSubdirectory}" does not exist in repository`);
     }
 
     // Step 4: Install dependencies

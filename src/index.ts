@@ -39,7 +39,7 @@ async function main(): Promise<void> {
     // Build auth config from environment
     const auth: AuthConfig = {
       username: process.env.GIT_USERNAME,
-      token: process.env.GIT_TOKEN,
+      token: process.env.GIT_TOKEN || process.env.GIT_PASSWORD,
       ssh_private_key: process.env.SSH_PRIVATE_KEY,
       ssh_known_hosts: process.env.SSH_KNOWN_HOSTS,
     };

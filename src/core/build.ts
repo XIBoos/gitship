@@ -1,9 +1,8 @@
 import { join } from 'path';
 import { existsSync, symlinkSync, mkdirSync, cpSync } from 'fs';
-import { execStrict } from '../utils/exec.js';
+import { execShellStrict } from '../utils/exec.js';
 import { logger } from '../utils/logger.js';
 import { CacheManager } from './cache.js';
-import type { BuildConfig } from '../types.js';
 
 export class BuildManager {
   private cacheManager: CacheManager;
@@ -32,9 +31,7 @@ export class BuildManager {
     }
 
     logger.info(`Running install: ${installCommand}`);
-
-    const [cmd, ...args] = installCommand.split(' ');
-    await execStrict(cmd, args, { cwd: repoDir });
+    await execShellStrict(installCommand, { cwd: repoDir });
 
     this.cacheNodeModules(repoDir, cacheDir);
     this.cacheManager.updateDepsCache(repoDir, repoUrl);
@@ -44,10 +41,7 @@ export class BuildManager {
 
   async build(repoDir: string, buildCommand: string): Promise<void> {
     logger.info(`Running build: ${buildCommand}`);
-
-    const [cmd, ...args] = buildCommand.split(' ');
-    await execStrict(cmd, args, { cwd: repoDir });
-
+    await execShellStrict(buildCommand, { cwd: repoDir });
     logger.info('Build completed');
   }
 

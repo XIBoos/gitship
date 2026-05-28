@@ -6,12 +6,19 @@ import type { AuthConfig } from '../types.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 
+export interface RepoInfo {
+  url: string;
+  branch: string;
+  commit: string;
+  tag?: string;
+}
+
 export class GitManager {
-  async setupAuth(auth: AuthConfig): Promise<void> {
+  async setupAuth(auth: AuthConfig, repoUrl?: string): Promise<void> {
     if (auth.ssh_private_key) {
       await this.setupSSH(auth.ssh_private_key, auth.ssh_known_hosts);
     } else if (auth.username && auth.token) {
-      await this.setupHTTPS(auth.username, auth.token);
+      await this.setupHTTPS(auth.username, auth.token, repoUrl);
     }
   }
 
@@ -40,18 +47,39 @@ export class GitManager {
     }
   }
 
-  private async setupHTTPS(username: string, token: string): Promise<void> {
+  private async setupHTTPS(username: string, token: string, repoUrl?: string): Promise<void> {
     await execStrict('git', ['config', '--global', 'credential.helper', 'store']);
 
-    const credentialUrl = `https://${username}:${token}@gitea.example.com`;
+    // Extract host from repo URL, default to wildcard if not provided
+    let host = '';
+    if (repoUrl) {
+      try {
+        const url = new URL(repoUrl);
+        host = url.host; // includes port if present (e.g., "192.168.1.190:3030")
+      } catch {
+        // If URL parsing fails, fall back to extracting host manually
+        const match = repoUrl.match(/^https?:\/\/([^/]+)/);
+        if (match) {
+          host = match[1];
+        }
+      }
+    }
+
+    // Use the extracted host, or a wildcard pattern for all hosts
+    const protocol = repoUrl?.startsWith('https') ? 'https' : 'http';
+    const credentialUrl = host
+      ? `${protocol}://${username}:${token}@${host}`
+      : `https://${username}:${token}@*`;
+
     const credentialFile = join(homedir(), '.git-credentials');
     writeFileSync(credentialFile, credentialUrl + '\n', { mode: 0o600 });
 
-    logger.debug('HTTPS credentials configured');
+    logger.info(`HTTPS credentials configured for host: ${host || 'all hosts'}`);
   }
 
   isRepoCached(cacheDir: string): boolean {
-    return existsSync(join(cacheDir, '.git'));
+    // Mirror clone creates bare repo with HEAD file (not .git directory)
+    return existsSync(join(cacheDir, 'HEAD')) || existsSync(join(cacheDir, '.git'));
   }
 
   async cloneOrFetch(repoUrl: string, cacheDir: string): Promise<string> {
@@ -70,7 +98,7 @@ export class GitManager {
     repoDir: string,
     ref: string,
     workDir: string
-  ): Promise<string> {
+  ): Promise<{ commitHash: string; repoInfo: RepoInfo }> {
     if (!existsSync(workDir)) {
       mkdirSync(workDir, { recursive: true });
     }
@@ -80,11 +108,49 @@ export class GitManager {
     const refArg = this.isCommitHash(ref) ? ref : `origin/${ref}`;
     await execStrict('git', ['checkout', refArg], { cwd: workDir });
 
-    const hash = await execStrict('git', ['rev-parse', 'HEAD'], { cwd: workDir });
-    const commitHash = hash.trim();
+    // Get repository info from git
+    const commitHash = (await execStrict('git', ['rev-parse', 'HEAD'], { cwd: workDir })).trim();
+    const shortHash = commitHash.substring(0, 7);
 
-    logger.info(`Checked out commit: ${commitHash}`);
-    return commitHash;
+    // Get remote URL
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await execStrict('git', ['remote', 'get-url', 'origin'], { cwd: workDir })).trim();
+    } catch {
+      remoteUrl = '(unknown)';
+    }
+
+    // Get current branch
+    let branch = '';
+    try {
+      branch = (await execStrict('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workDir })).trim();
+      // If detached HEAD, branch will be "HEAD", try to get from ref
+      if (branch === 'HEAD') {
+        branch = ref;
+      }
+    } catch {
+      branch = '(unknown)';
+    }
+
+    // Get current tag (if any)
+    let tag = '';
+    try {
+      tag = (await execStrict('git', ['describe', '--tags', '--exact-match'], { cwd: workDir })).trim();
+    } catch {
+      // Not on a tag
+    }
+
+    logger.info(`Checked out commit: ${shortHash}`);
+
+    return {
+      commitHash,
+      repoInfo: {
+        url: remoteUrl,
+        branch,
+        commit: shortHash,
+        tag: tag || undefined,
+      },
+    };
   }
 
   private isCommitHash(ref: string): boolean {

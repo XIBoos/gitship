@@ -26,6 +26,9 @@ RUN apk add --no-cache \
     openssh-client \
     bash
 
+# Enable corepack and prepare pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /app
 
 # Copy built files

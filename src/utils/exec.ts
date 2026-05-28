@@ -58,3 +58,53 @@ export async function execStrict(
 
   return result.stdout;
 }
+
+// Execute a shell command string (supports &&, ||, pipes, etc.)
+export async function execShell(
+  shellCommand: string,
+  options: ExecOptions = {}
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const { cwd, env, timeout = 300000, silent = false } = options;
+
+  if (!silent) {
+    logger.debug(`Executing shell: ${shellCommand}`, { cwd });
+  }
+
+  try {
+    const result = await execa('sh', ['-c', shellCommand], {
+      cwd,
+      env: { ...process.env, ...env },
+      timeout,
+      reject: false,
+      all: true,
+    });
+
+    if (!silent) {
+      logger.debug(`Shell command completed with exit code: ${result.exitCode}`);
+    }
+
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode ?? 0,
+    };
+  } catch (error) {
+    logger.error(`Shell command failed: ${shellCommand}`, { error });
+    throw error;
+  }
+}
+
+export async function execShellStrict(
+  shellCommand: string,
+  options: ExecOptions = {}
+): Promise<string> {
+  const result = await execShell(shellCommand, options);
+
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Shell command '${shellCommand}' failed with exit code ${result.exitCode}: ${result.stderr}`
+    );
+  }
+
+  return result.stdout;
+}
