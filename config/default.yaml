@@ -1,0 +1,35 @@
+repo:
+  url: ""
+  branch: "main"
+  version: ""
+  subdirectory: ""
+
+build:
+  command: "npm run build"
+  install_command: "npm install"
+  node_version: ""
+
+output:
+  dir: "/output"
+  exclude:
+    - "*.map"
+    - "*.log"
+    - ".git"
+    - "node_modules"
+
+cache:
+  dir: "/cache"
+  git: true
+  deps: true
+
+error:
+  on_error: "stop"
+  webhook: ""
+
+schedule:
+  enabled: false
+  cron: ""
+
+api:
+  enabled: false
+  port: 3000

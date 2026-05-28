@@ -1,0 +1,142 @@
+# GitShip - Docker Compose 示例
+#
+# 使用方法:
+#   方式一：预先构建镜像
+#     1. 构建镜像: docker build -t gitship:latest .
+#     2. 复制此文件为 docker-compose.yml
+#     3. 创建 .env 文件并设置 GIT_TOKEN
+#     4. 在 config/ 目录下创建各项目的配置文件
+#     5. 运行 docker-compose up -d
+#
+#   方式二：使用 build 配置（取消下方 build 注释）
+#     1. 复制此文件为 docker-compose.yml
+#     2. 取消 build 配置的注释
+#     3. 运行 docker-compose up -d --build
+#
+# 目录结构:
+#   /opt/gitship/
+#   ├── docker-compose.yml
+#   ├── .env
+#   └── config/
+#       ├── project-a.yaml
+#       ├── project-b.yaml
+#       └── project-c.yaml
+
+version: '3.8'
+
+services:
+  # ============================================
+  # 项目 A - 定时部署（每天早上 6 点）
+  # ============================================
+  project-a:
+    # 方式一：使用预先构建的镜像
+    image: gitship:latest
+    # 方式二：从源码构建（取消下方注释）
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: gitship-project-a
+    restart: unless-stopped
+    volumes:
+      # 配置文件（只读挂载）
+      - ./config/project-a.yaml:/config/deploy.yaml:ro
+      # 输出目录（构建产物）
+      - /var/www/project-a:/output
+      # 缓存目录（使用命名卷隔离）
+      - gitship-cache-a:/cache
+    environment:
+      # 从 .env 文件读取 Token
+      - GIT_TOKEN=${GIT_TOKEN}
+      # 可选：Git 用户名
+      # - GIT_USERNAME=${GIT_USERNAME}
+    command: ["--schedule", "0 6 * * *"]
+    # 可选：资源限制
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1G
+
+  # ============================================
+  # 项目 B - 定时部署（每 6 小时）
+  # ============================================
+  project-b:
+    image: gitship:latest
+    container_name: gitship-project-b
+    restart: unless-stopped
+    volumes:
+      - ./config/project-b.yaml:/config/deploy.yaml:ro
+      - /var/www/project-b:/output
+      - gitship-cache-b:/cache
+    environment:
+      - GIT_TOKEN=${GIT_TOKEN}
+      # 环境变量覆盖配置文件（优先级最高）
+      - REPO_BRANCH=develop
+      - BUILD_COMMAND=npm run build:staging
+    command: ["--schedule", "0 */6 * * *"]
+
+  # ============================================
+  # 项目 C - API 模式（手动触发）
+  # ============================================
+  project-c:
+    image: gitship:latest
+    container_name: gitship-project-c
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./config/project-c.yaml:/config/deploy.yaml:ro
+      - /var/www/project-c:/output
+      - gitship-cache-c:/cache
+    environment:
+      - GIT_TOKEN=${GIT_TOKEN}
+    command: ["--api", "--port", "3000"]
+
+  # ============================================
+  # 项目 D - 一次性部署（需手动运行）
+  # ============================================
+  project-d:
+    image: gitship:latest
+    container_name: gitship-project-d
+    # 不自动重启，手动运行时才启动
+    restart: "no"
+    volumes:
+      - ./config/project-d.yaml:/config/deploy.yaml:ro
+      - /var/www/project-d:/output
+      - gitship-cache-d:/cache
+    environment:
+      - GIT_TOKEN=${GIT_TOKEN}
+    command: ["--once"]
+    profiles:
+      - manual  # 需要 --profile manual 才会启动
+
+  # ============================================
+  # 项目 E - 使用 SSH 认证
+  # ============================================
+  project-e:
+    image: gitship:latest
+    container_name: gitship-project-e
+    restart: unless-stopped
+    volumes:
+      - ./config/project-e.yaml:/config/deploy.yaml:ro
+      - /var/www/project-e:/output
+      - gitship-cache-e:/cache
+    environment:
+      # SSH 认证方式
+      - SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}
+      # 可选：已知主机（不提供则跳过主机验证）
+      # - SSH_KNOWN_HOSTS=${SSH_KNOWN_HOSTS}
+    command: ["--schedule", "0 9 * * 1-5"]  # 周一到周五 9:00
+
+# 命名卷管理缓存
+# 每个项目使用独立的缓存卷，避免冲突
+volumes:
+  gitship-cache-a:
+    name: gitship-cache-project-a
+  gitship-cache-b:
+    name: gitship-cache-project-b
+  gitship-cache-c:
+    name: gitship-cache-project-c
+  gitship-cache-d:
+    name: gitship-cache-project-d
+  gitship-cache-e:
+    name: gitship-cache-project-e
